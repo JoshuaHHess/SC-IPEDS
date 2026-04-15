@@ -2,7 +2,7 @@
 
 This repo contains an RStudio-friendly Shiny dashboard for South Carolina IPEDS analysis. It is set up around three views:
 
-- where freshmen are coming from
+- a U.S. heatmap showing where freshmen are coming from
 - STEM degree completions over time
 - average in-state and out-of-state charges over time
 

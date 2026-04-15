@@ -109,7 +109,7 @@ ui <- fluidPage(
         h1(class = "hero-title", "South Carolina Student Flow and Cost Trends"),
         p(
           class = "hero-copy",
-          "A prototype Shiny dashboard for South Carolina institutions showing where freshmen come from, how STEM completions change over time, and how resident and nonresident charges compare."
+          "A prototype Shiny dashboard for South Carolina institutions showing a U.S. freshman-origin heatmap, STEM completions over time, and how resident and nonresident charges compare."
         )
       ),
       column(
@@ -151,7 +151,7 @@ ui <- fluidPage(
         h3("How To Wire Real IPEDS Data"),
         p("Drop your raw files into data/raw, run source('data-raw/process_ipeds.R'), and reload the app. The dashboard will prefer processed .rds files when they exist."),
         h3("Expected Inputs"),
-        p("Freshman origin, completions by CIP, and tuition or price data with year, institution, and sector fields. The processing script is set up so we can tailor the column mapping once we inspect your files.")
+        p("Freshman origin by home state, completions by CIP, and tuition or price data with year, institution, and sector fields. The processing script is set up so we can tailor the column mapping once we inspect your files.")
       )
     )
   ),
@@ -247,22 +247,44 @@ server <- function(input, output, session) {
     origin_summary <- filtered_origin() |>
       group_by(origin_state) |>
       summarise(freshmen = sum(freshmen, na.rm = TRUE), .groups = "drop") |>
-      arrange(desc(freshmen)) |>
-      slice_head(n = 12)
+      mutate(
+        origin_state = toupper(origin_state),
+        hover_text = paste0(origin_state, ": ", comma(freshmen), " freshmen")
+      ) |>
+      filter(nchar(origin_state) == 2)
 
-    p <- ggplot(origin_summary, aes(x = reorder(origin_state, freshmen), y = freshmen, fill = origin_state, text = paste0(origin_state, ": ", comma(freshmen), " freshmen"))) +
-      geom_col(show.legend = FALSE) +
-      coord_flip() +
-      scale_fill_manual(values = rep_len(c("#2F7F79", "#D96C3F", "#C79A36", "#6D8E89"), nrow(origin_summary))) +
-      labs(
-        title = "Where Freshmen Are Coming From",
-        subtitle = "Top origin states for the current South Carolina selection",
-        y = "Freshmen",
-        x = NULL
+    plot_ly(
+      data = origin_summary,
+      type = "choropleth",
+      locationmode = "USA-states",
+      locations = ~origin_state,
+      z = ~freshmen,
+      text = ~hover_text,
+      hovertemplate = "%{text}<extra></extra>",
+      colorscale = list(
+        c(0, "#F3E4CB"),
+        c(0.35, "#E3B45A"),
+        c(0.7, "#D96C3F"),
+        c(1, "#8E3B2B")
+      ),
+      marker = list(line = list(color = "rgba(255,250,242,0.85)", width = 1)),
+      colorbar = list(title = list(text = "Freshmen"))
+    ) |>
+      layout(
+        title = list(
+          text = "Where Freshmen Are Coming From<br><sup>U.S. heatmap of freshman home states for the current South Carolina selection</sup>",
+          x = 0
+        ),
+        geo = list(
+          scope = "usa",
+          projection = list(type = "albers usa"),
+          showlakes = FALSE,
+          bgcolor = "rgba(0,0,0,0)"
+        ),
+        paper_bgcolor = "rgba(0,0,0,0)",
+        plot_bgcolor = "rgba(0,0,0,0)",
+        margin = list(l = 10, r = 10, t = 80, b = 10)
       )
-
-    ggplotly(p, tooltip = "text") |>
-      layout(margin = list(l = 80, r = 20, t = 70, b = 40))
   })
 
   output$stem_plot <- renderPlotly({

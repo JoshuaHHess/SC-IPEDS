@@ -6,3 +6,4 @@ renv/library/
 renv/staging/
 data/processed/*.rds
 !data/processed/.gitkeep
+.Rproj.user
