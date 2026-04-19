@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Higher Education in South Carolina</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root {
+      --bg: #F4EFE5;
+      --card: rgba(255,250,242,0.96);
+      --ink: #17322F;
+      --muted: #5C6F6D;
+      --teal: #2F7F79;
+      --gold: #C79A36;
+      --orange: #D96C3F;
+      --sand: #F3E4CB;
+      --shadow: 0 18px 60px rgba(80, 62, 35, 0.12);
+      --radius: 24px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    .page {
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.8fr);
+      gap: 24px;
+      padding: 28px;
+      border-radius: 28px;
+      background: linear-gradient(135deg, rgba(255,250,242,0.96), rgba(243,228,203,0.92));
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
+    }
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.76rem;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 10px;
+      font-family: system-ui, sans-serif;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(2.3rem, 5vw, 4.2rem);
+      line-height: 0.95;
+      font-family: system-ui, sans-serif;
+    }
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      max-width: 55rem;
+      font-size: 1rem;
+    }
+    .controls {
+      display: grid;
+      gap: 16px;
+      align-content: start;
+    }
+    .control label {
+      display: block;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.76rem;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 8px;
+      font-family: system-ui, sans-serif;
+    }
+    select {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid rgba(23,50,47,0.12);
+      border-radius: 14px;
+      background: rgba(255,250,242,0.98);
+      color: var(--ink);
+      font-size: 1rem;
+    }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+    .kpi-label {
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.76rem;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 10px;
+      font-family: system-ui, sans-serif;
+    }
+    .kpi-value {
+      font-size: clamp(1.8rem, 3vw, 2.6rem);
+      line-height: 1;
+      margin-bottom: 10px;
+      font-weight: 700;
+    }
+    .kpi-detail {
+      color: var(--muted);
+      margin: 0;
+    }
+    .section-title {
+      font-family: system-ui, sans-serif;
+      font-size: 1.4rem;
+      letter-spacing: 0.02em;
+      margin: 18px 0 8px;
+    }
+    .section-copy {
+      color: var(--muted);
+      margin: 0 0 14px;
+    }
+    .grid-2, .grid-3 {
+      display: grid;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .plot { width: 100%; min-height: 420px; }
+    .plot.short { min-height: 360px; }
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 40vh;
+      color: var(--muted);
+      font-size: 1.1rem;
+    }
+    @media (max-width: 980px) {
+      .hero, .kpis, .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      .page { padding: 16px; }
+      .plot { min-height: 380px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div id="loading" class="loading">Loading dashboard…</div>
+    <div id="app" hidden>
+      <section class="hero">
+        <div>
+          <div class="eyebrow">IPEDS Dashboard</div>
+          <h1>Higher Education in South Carolina</h1>
+          <p class="subtitle">Data from the National Center for Education Statistics</p>
+        </div>
+        <div class="controls">
+          <div class="control">
+            <label for="institution-select">Institution</label>
+            <select id="institution-select"></select>
+          </div>
+          <div class="control">
+            <label for="sector-select">Sector</label>
+            <select id="sector-select"></select>
+          </div>
+          <div class="control">
+            <label for="stem-select">STEM Degree Level</label>
+            <select id="stem-select">
+              <option value="Total">Total</option>
+              <option value="Associate's degree">Associate's</option>
+              <option value="Bachelor's degree">Bachelor's</option>
+              <option value="Master's degree">Master's</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <section class="kpis grid-3">
+        <div class="card"><div class="kpi-label">Applications</div><div id="kpi-gap-value" class="kpi-value"></div><p id="kpi-gap-detail" class="kpi-detail"></p></div>
+        <div class="card"><div class="kpi-label">STEM Degrees</div><div id="kpi-stem-value" class="kpi-value"></div><p id="kpi-stem-detail" class="kpi-detail"></p></div>
+        <div class="card"><div class="kpi-label">Largest Out-of-State Origin</div><div id="kpi-origin-value" class="kpi-value"></div><p id="kpi-origin-detail" class="kpi-detail"></p></div>
+      </section>
+
+      <section>
+        <div id="snapshot-title" class="section-title"></div>
+        <p class="section-copy">A quick view of the latest South Carolina institution map, out-of-state origin map, and current-period student composition.</p>
+        <div class="grid-2">
+          <div class="card"><div id="schools-plot" class="plot"></div></div>
+          <div class="card"><div id="origin-plot" class="plot"></div></div>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-title">Composition</div>
+        <div class="grid-2">
+          <div class="card"><div id="ethnicity-plot" class="plot"></div></div>
+          <div class="card"><div id="gender-plot" class="plot"></div></div>
+        </div>
+        <div class="grid-2">
+          <div class="card" style="grid-column: 1 / -1;"><div id="workforce-plot" class="plot"></div></div>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-title">Time Trends</div>
+        <p class="section-copy">Multi-year trend lines for STEM degrees and average undergraduate charges.</p>
+        <div class="grid-2">
+          <div class="card"><div id="stem-plot" class="plot short"></div></div>
+          <div class="card"><div id="charges-plot" class="plot short"></div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const fmtNum = new Intl.NumberFormat('en-US');
+    const fmtMoney0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+    const fmtPct = new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 1 });
+
+    const COLORS = {
+      teal: '#2F7F79',
+      gold: '#C79A36',
+      orange: '#D96C3F',
+      sand: '#F3E4CB',
+      redDark: '#6E1F1B'
+    };
+
+    const awardColors = {
+      "Total": COLORS.teal,
+      "Associate's degree": COLORS.teal,
+      "Bachelor's degree": COLORS.gold,
+      "Master's degree": COLORS.orange
+    };
+
+    const academicYear = springYear => {
+      const y = Number(springYear);
+      if (!Number.isFinite(y)) return 'Academic Year';
+      return `Academic Year ${y - 1}-${String(y).slice(2)}`;
+    };
+
+    function uniqueSorted(values) {
+      return [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
+    }
+
+    function buildSelectors(data) {
+      const institutions = ['All Institutions', ...uniqueSorted(data.meta.institutions)];
+      const sectors = ['All', ...uniqueSorted(data.meta.sectors)];
+      const institutionSelect = document.getElementById('institution-select');
+      const sectorSelect = document.getElementById('sector-select');
+      institutionSelect.innerHTML = institutions.map(v => `<option value="${v}">${v}</option>`).join('');
+      sectorSelect.innerHTML = sectors.map(v => `<option value="${v}">${v}</option>`).join('');
+    }
+
+    function filterRows(rows, institution, sector) {
+      return rows.filter(row =>
+        (institution === 'All Institutions' || row.institution_name === institution) &&
+        (sector === 'All' || row.sector === sector)
+      );
+    }
+
+    function latestSpringYear(filteredSets) {
+      const vals = filteredSets.flat().map(r => Number(r.spring_year)).filter(Number.isFinite);
+      return vals.length ? Math.max(...vals) : null;
+    }
+
+    function latestCommonSpringYear(filteredSets) {
+      const yearSets = filteredSets.map(rows =>
+        new Set(rows.map(r => Number(r.spring_year)).filter(Number.isFinite))
+      );
+
+      if (!yearSets.length || yearSets.some(set => set.size === 0)) {
+        return null;
+      }
+
+      const commonYears = [...yearSets[0]].filter(year => yearSets.every(set => set.has(year)));
+      return commonYears.length ? Math.max(...commonYears) : null;
+    }
+
+    function summarizeBy(rows, key, valueKey) {
+      const out = new Map();
+      for (const row of rows) {
+        const k = row[key];
+        out.set(k, (out.get(k) || 0) + Number(row[valueKey] || 0));
+      }
+      return [...out.entries()].map(([key, value]) => ({ key, value }));
+    }
+
+    function updateDashboard(data) {
+      const institution = document.getElementById('institution-select').value;
+      const sector = document.getElementById('sector-select').value;
+      const stemLevel = document.getElementById('stem-select').value;
+
+      const origin = filterRows(data.origin, institution, sector);
+      const schools = filterRows(data.schools, institution, sector);
+      const ethnicity = filterRows(data.ethnicity, institution, sector);
+      const stem = filterRows(data.stem, institution, sector);
+      const charges = filterRows(data.charges, institution, sector);
+      const workforce = filterRows(data.workforce, institution, sector);
+
+      const snapshotSpring =
+        latestCommonSpringYear([origin, schools, ethnicity, stem, charges]) ??
+        latestSpringYear([origin, schools, ethnicity, stem, charges]);
+      const snapshotLabel = academicYear(snapshotSpring);
+      document.getElementById('snapshot-title').textContent = `${snapshotLabel} Snapshot`;
+      const workforceSpring = latestSpringYear([workforce]);
+      const workforceLabel = academicYear(workforceSpring);
+
+      const snapOrigin = origin.filter(r => Number(r.spring_year) === snapshotSpring);
+      const snapSchools = schools.filter(r => Number(r.spring_year) === snapshotSpring);
+      const snapEthnicity = ethnicity.filter(r => Number(r.spring_year) === snapshotSpring);
+      const snapStem = stem.filter(r => Number(r.spring_year) === snapshotSpring);
+      const snapCharges = charges.filter(r => Number(r.spring_year) === snapshotSpring);
+      const applicationsSpring = latestSpringYear([charges.filter(r => Number.isFinite(Number(r.applications)))]);
+      const applicationsLabel = academicYear(applicationsSpring);
+      const applicationsCharges = charges.filter(r => Number(r.spring_year) === applicationsSpring && Number.isFinite(Number(r.applications)));
+      const snapWorkforce = workforce.filter(r => Number(r.spring_year) === workforceSpring);
+
+      renderKpis(snapOrigin, snapStem, snapCharges, applicationsCharges, snapshotLabel, applicationsLabel, stemLevel);
+      renderSchools(snapSchools, snapshotLabel);
+      renderOrigin(snapOrigin, snapshotLabel);
+      renderEthnicity(snapEthnicity, snapshotLabel);
+      renderGender(snapEthnicity, snapshotLabel);
+      renderWorkforce(snapWorkforce, workforceLabel);
+      renderStem(stem, stemLevel);
+      renderCharges(charges);
+    }
+
+    function renderKpis(origin, stem, charges, applicationsRows, snapshotLabel, applicationsLabel, stemLevel) {
+      const originAgg = summarizeBy(origin.filter(r => r.origin_state !== 'SC'), 'origin_state', 'freshmen').sort((a, b) => b.value - a.value)[0];
+      document.getElementById('kpi-origin-value').textContent = originAgg ? originAgg.key : 'NA';
+      document.getElementById('kpi-origin-detail').textContent = `${fmtNum.format(originAgg ? originAgg.value : 0)} out-of-state freshmen in ${snapshotLabel}`;
+
+      const stemFiltered = stemLevel === 'Total' ? stem : stem.filter(r => r.award_level === stemLevel);
+      const stemTotal = stemFiltered.reduce((sum, r) => sum + Number(r.completions || 0), 0);
+      document.getElementById('kpi-stem-value').textContent = fmtNum.format(stemTotal);
+      document.getElementById('kpi-stem-detail').textContent = `Total ${stemLevel === 'Total' ? '' : stemLevel + ' '}degrees in ${snapshotLabel}`.replace('  ', ' ');
+
+      const applications = applicationsRows.map(r => Number(r.applications)).filter(v => Number.isFinite(v));
+      const totalApplications = applications.reduce((a, b) => a + b, 0);
+      document.getElementById('kpi-gap-value').textContent = fmtNum.format(Math.round(totalApplications));
+      document.getElementById('kpi-gap-detail').textContent = `Total applications in ${applicationsLabel}`;
+    }
+
+    function renderSchools(rows, snapshotLabel) {
+      const publicRows = rows.filter(r => r.sector === 'Public');
+      const privateRows = rows.filter(r => r.sector === 'Private');
+      const maxEnroll = Math.max(1, ...rows.map(r => Number(r.total_enrollment || 0)));
+      const markerSize = value => 10 + ((Math.sqrt(Number(value || 0)) / Math.sqrt(maxEnroll)) * 32);
+
+      Plotly.newPlot('schools-plot', [
+        {
+          type: 'choropleth',
+          locationmode: 'USA-states',
+          locations: ['SC'],
+          z: [1],
+          colorscale: [[0, COLORS.sand], [1, COLORS.sand]],
+          showscale: false,
+          hoverinfo: 'skip',
+          marker: { line: { color: 'rgba(23,50,47,0.9)', width: 2.2 } }
+        },
+        {
+          type: 'scattergeo',
+          mode: 'markers',
+          name: 'Public',
+          lat: publicRows.map(r => Number(r.latitude)),
+          lon: publicRows.map(r => Number(r.longitude)),
+          text: publicRows.map(r => `${r.institution_name}<br>${r.city}, SC<br>Total enrollment: ${fmtNum.format(Number(r.total_enrollment || 0))}`),
+          hovertemplate: '%{text}<extra></extra>',
+          marker: {
+            color: COLORS.teal,
+            size: publicRows.map(r => markerSize(r.total_enrollment)),
+            line: { color: 'rgba(23,50,47,0.65)', width: 1 },
+            opacity: 0.88
+          }
+        },
+        {
+          type: 'scattergeo',
+          mode: 'markers',
+          name: 'Private',
+          lat: privateRows.map(r => Number(r.latitude)),
+          lon: privateRows.map(r => Number(r.longitude)),
+          text: privateRows.map(r => `${r.institution_name}<br>${r.city}, SC<br>Total enrollment: ${fmtNum.format(Number(r.total_enrollment || 0))}`),
+          hovertemplate: '%{text}<extra></extra>',
+          marker: {
+            color: COLORS.orange,
+            size: privateRows.map(r => markerSize(r.total_enrollment)),
+            line: { color: 'rgba(23,50,47,0.65)', width: 1 },
+            opacity: 0.88
+          }
+        }
+      ], {
+        title: { text: `South Carolina Institutions<br><sup>${snapshotLabel} sized by total enrollment</sup>`, x: 0 },
+        geo: {
+          scope: 'north america',
+          projection: { type: 'mercator' },
+          center: { lat: 33.9, lon: -80.9 },
+          lonaxis: { range: [-83.6, -78.2], showgrid: false },
+          lataxis: { range: [31.8, 35.3], showgrid: false },
+          showframe: false,
+          showland: true,
+          landcolor: COLORS.sand,
+          showsubunits: true,
+          subunitcolor: 'rgba(23,50,47,0.55)',
+          showcountries: false,
+          showcoastlines: false,
+          showlakes: false,
+          showrivers: false,
+          bgcolor: 'rgba(0,0,0,0)'
+        },
+        legend: { orientation: 'h', x: 0.3, y: 1.08 },
+        dragmode: false,
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { l: 10, r: 10, t: 80, b: 10 }
+      }, {
+        displayModeBar: false,
+        scrollZoom: false,
+        doubleClick: false,
+        responsive: true
+      });
+    }
+
+    function renderOrigin(rows, snapshotLabel) {
+      const agg = summarizeBy(rows.filter(r => r.origin_state !== 'SC'), 'origin_state', 'freshmen').filter(r => r.key && r.key.length === 2);
+
+      Plotly.newPlot('origin-plot', [{
+        type: 'choropleth',
+        locationmode: 'USA-states',
+        locations: agg.map(r => r.key),
+        z: agg.map(r => r.value),
+        text: agg.map(r => `${r.key}: ${fmtNum.format(r.value)} out-of-state freshmen`),
+        hovertemplate: '%{text}<extra></extra>',
+        colorscale: [[0, '#FFF8EF'], [0.18, '#F6D58A'], [0.42, '#E89A47'], [0.7, '#D2552F'], [1, '#6E1F1B']],
+        marker: { line: { color: 'rgba(255,250,242,0.85)', width: 1 } },
+        colorbar: { title: { text: 'Freshmen' } }
+      }], {
+        title: { text: `Out-of-State Origins<br><sup>${snapshotLabel} excluding South Carolina residents</sup>`, x: 0 },
+        geo: { scope: 'usa', projection: { type: 'albers usa' }, showlakes: false, bgcolor: 'rgba(0,0,0,0)' },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { l: 10, r: 10, t: 80, b: 10 }
+      }, {
+        displayModeBar: false,
+        scrollZoom: false,
+        doubleClick: false,
+        responsive: true
+      });
+    }
+
+    function renderEthnicity(rows, snapshotLabel) {
+      const totals = {
+        'American Indian': 0,
+        Asian: 0,
+        Black: 0,
+        Hispanic: 0,
+        'Pacific Islander': 0,
+        White: 0,
+        'Two or More': 0,
+        Unknown: 0,
+        Nonresident: 0
+      };
+
+      rows.forEach(r => {
+        totals['American Indian'] += Number(r.american_indian || 0);
+        totals.Asian += Number(r.asian || 0);
+        totals.Black += Number(r.black || 0);
+        totals.Hispanic += Number(r.hispanic || 0);
+        totals['Pacific Islander'] += Number(r.pacific_islander || 0);
+        totals.White += Number(r.white || 0);
+        totals['Two or More'] += Number(r.two_or_more || 0);
+        totals.Unknown += Number(r.unknown || 0);
+        totals.Nonresident += Number(r.nonresident || 0);
+      });
+
+      const entries = Object.entries(totals).filter(([, v]) => v > 0);
+      Plotly.newPlot('ethnicity-plot', [{
+        labels: entries.map(([k]) => k),
+        values: entries.map(([, v]) => v),
+        type: 'pie',
+        textinfo: 'label+percent',
+        textposition: 'inside',
+        sort: false,
+        marker: {
+          colors: [COLORS.teal, COLORS.gold, COLORS.orange, '#6D8E89', '#B65D3A', '#204B47', '#E8B66A', '#A7B8B5', '#8A9F4D'],
+          line: { color: '#FFF8EF', width: 1 }
+        }
+      }], {
+        title: { text: `Race and Ethnicity<br><sup>${snapshotLabel}</sup>`, x: 0 },
+        showlegend: false,
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { l: 10, r: 10, t: 80, b: 10 }
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    function renderGender(rows, snapshotLabel) {
+      const men = rows.reduce((sum, r) => sum + Number(r.male || 0), 0);
+      const women = rows.reduce((sum, r) => sum + Number(r.female || 0), 0);
+      const labels = [];
+      const values = [];
+
+      if (men > 0) {
+        labels.push('Men');
+        values.push(men);
+      }
+      if (women > 0) {
+        labels.push('Women');
+        values.push(women);
+      }
+
+      Plotly.newPlot('gender-plot', [{
+        labels,
+        values,
+        type: 'pie',
+        textinfo: 'label+percent',
+        textposition: 'inside',
+        sort: false,
+        marker: {
+          colors: [COLORS.teal, COLORS.orange],
+          line: { color: '#FFF8EF', width: 1 }
+        }
+      }], {
+        title: { text: `Gender<br><sup>${snapshotLabel}</sup>`, x: 0 },
+        showlegend: false,
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { l: 10, r: 10, t: 80, b: 10 }
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    function renderWorkforce(rows, snapshotLabel) {
+      const map = new Map();
+      rows.forEach(r => {
+        const key = `${r.workforce_group}||${r.program_label}`;
+        map.set(key, (map.get(key) || 0) + Number(r.majors || 0));
+      });
+
+      const values = [...map.entries()].map(([k, v]) => {
+        const [group, label] = k.split('||');
+        return { workforce_group: group, program_label: label, majors: v };
+      });
+
+      const freshmenOrder = ['Education', 'Engineering', 'Biological Sciences/Life Sciences', 'Mathematics', 'Physical Sciences', 'Business'];
+      const freshmenLabels = ['Education', 'Engineering', 'Bio & Life Sciences', 'Mathematics', 'Physical Sciences', 'Business'];
+      const professionalOrder = ['Law', 'Dentistry', 'Medicine'];
+      const freshmenVals = freshmenOrder.map(label => values.find(v => v.workforce_group === 'Freshmen majors (24)' && v.program_label === label)?.majors || 0);
+      const professionalVals = professionalOrder.map(label => values.find(v => v.workforce_group === 'Professional degree majors' && v.program_label === label)?.majors || 0);
+      const freshmenMax = Math.max(0, ...freshmenVals);
+      const professionalMax = Math.max(0, ...professionalVals);
+
+      const axisCap = value => {
+        if (!value) return 10;
+        return Math.ceil(value * 1.08);
+      };
+
+      const traces = [
+        {
+          x: freshmenLabels,
+          y: freshmenVals,
+          type: 'bar',
+          name: 'Freshmen majors (24)',
+          marker: { color: COLORS.teal },
+          text: freshmenVals.map(v => v > 0 ? fmtNum.format(v) : ''),
+          textposition: 'outside',
+          cliponaxis: false,
+          hovertemplate: '%{x}<br>Freshmen majors (24): %{y:,.0f}<extra></extra>'
+        },
+        {
+          x: professionalOrder,
+          y: professionalVals,
+          type: 'bar',
+          name: 'Professional degree majors',
+          marker: { color: COLORS.orange },
+          text: professionalVals.map(v => v > 0 ? fmtNum.format(v) : ''),
+          textposition: 'outside',
+          cliponaxis: false,
+          hovertemplate: '%{x}<br>Professional degree majors: %{y:,.0f}<extra></extra>',
+          xaxis: 'x2',
+          yaxis: 'y2'
+        }
+      ];
+
+      Plotly.newPlot('workforce-plot', traces, {
+        title: { text: `Workforce Readiness Majors<br><sup>${snapshotLabel}</sup>`, x: 0 },
+        grid: { rows: 1, columns: 2, pattern: 'independent', xgap: 0.18 },
+        xaxis: { title: '', tickangle: -20, automargin: true },
+        yaxis: { title: '', showticklabels: false, showgrid: false, zeroline: false, range: [0, axisCap(freshmenMax)], automargin: true },
+        xaxis2: { title: '', tickangle: 0, automargin: true },
+        yaxis2: { title: '', showticklabels: false, showgrid: false, zeroline: false, range: [0, axisCap(professionalMax)], automargin: true },
+        annotations: [
+          { text: 'Freshmen majors', x: 0.19, y: 1.08, xref: 'paper', yref: 'paper', showarrow: false, font: { size: 13, color: '#4b3b2a' } },
+          { text: 'Professional degree majors', x: 0.82, y: 1.08, xref: 'paper', yref: 'paper', showarrow: false, font: { size: 13, color: '#4b3b2a' } }
+        ],
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { l: 70, r: 40, t: 100, b: 120 },
+        showlegend: false
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    function trendRange(values, pad = 0.15) {
+      const finite = values.filter(v => Number.isFinite(v));
+      if (!finite.length) return undefined;
+      const min = Math.min(...finite);
+      const max = Math.max(...finite);
+
+      if (min === max) {
+        const delta = Math.max(1, Math.abs(max) * pad);
+        return [Math.max(0, min - delta), max + delta];
+      }
+
+      const spread = max - min;
+      const lower = Math.max(0, min - spread * pad);
+      const upper = max + spread * pad;
+      return [lower, upper];
+    }
+
+    function renderStem(rows, stemLevel) {
+      const filtered = stemLevel === 'Total' ? rows : rows.filter(r => r.award_level === stemLevel);
+      const yearly = new Map();
+      filtered.forEach(r => yearly.set(Number(r.year), (yearly.get(Number(r.year)) || 0) + Number(r.completions || 0)));
+      const years = [...yearly.keys()].sort((a, b) => a - b);
+      const values = years.map(y => yearly.get(y));
+
+      Plotly.newPlot('stem-plot', [{
+        x: years,
+        y: values,
+        type: 'scatter',
+        mode: 'lines+markers',
+        line: { color: awardColors[stemLevel], width: 3 },
+        marker: { color: awardColors[stemLevel], size: 9 },
+        text: years.map((y, i) => `${stemLevel}<br>${y}: ${fmtNum.format(values[i])} degrees`),
+        hovertemplate: '%{text}<extra></extra>'
+      }], {
+        title: { text: `STEM Degrees<br><sup>${stemLevel}</sup>`, x: 0 },
+        xaxis: { title: '', tickmode: 'array', tickvals: years, ticktext: years, autorange: true },
+        yaxis: { title: '', tickformat: ',d', range: trendRange(values), automargin: true },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { l: 60, r: 20, t: 70, b: 40 },
+        showlegend: false
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    function renderCharges(rows) {
+      const yearly = new Map();
+      rows.forEach(r => {
+        const year = Number(r.year);
+        const obj = yearly.get(year) || { inSum: 0, outSum: 0, n: 0 };
+        obj.inSum += Number(r.in_state_charge || 0);
+        obj.outSum += Number(r.out_state_charge || 0);
+        obj.n += 1;
+        yearly.set(year, obj);
+      });
+
+      const years = [...yearly.keys()].sort((a, b) => a - b);
+      const inVals = years.map(y => yearly.get(y).n ? yearly.get(y).inSum / yearly.get(y).n : 0);
+      const outVals = years.map(y => yearly.get(y).n ? yearly.get(y).outSum / yearly.get(y).n : 0);
+
+      Plotly.newPlot('charges-plot', [
+        {
+          x: years,
+          y: inVals,
+          type: 'scatter',
+          mode: 'lines+markers',
+          name: 'In-State',
+          line: { color: COLORS.gold, width: 3 },
+          marker: { color: COLORS.gold, size: 9 },
+          text: years.map((y, i) => `${y}: ${fmtMoney0.format(inVals[i])}`),
+          hovertemplate: 'In-State<br>%{text}<extra></extra>'
+        },
+        {
+          x: years,
+          y: outVals,
+          type: 'scatter',
+          mode: 'lines+markers',
+          name: 'Out-of-State',
+          line: { color: COLORS.orange, width: 3 },
+          marker: { color: COLORS.orange, size: 9 },
+          text: years.map((y, i) => `${y}: ${fmtMoney0.format(outVals[i])}`),
+          hovertemplate: 'Out-of-State<br>%{text}<extra></extra>'
+        }
+      ], {
+        title: { text: 'Average Charges', x: 0 },
+        xaxis: { title: '', tickmode: 'array', tickvals: years, ticktext: years, autorange: true },
+        yaxis: { title: 'Average charge', tickprefix: '$', separatethousands: true, range: trendRange(inVals.concat(outVals)) },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { l: 60, r: 20, t: 70, b: 40 },
+        legend: { orientation: 'h', x: 0.25, y: 1.1 }
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    async function init() {
+      const response = await fetch('./data/dashboard-client.json');
+      const data = await response.json();
+      buildSelectors(data);
+      ['institution-select', 'sector-select', 'stem-select'].forEach(id =>
+        document.getElementById(id).addEventListener('change', () => updateDashboard(data))
+      );
+      document.getElementById('loading').hidden = true;
+      document.getElementById('app').hidden = false;
+      updateDashboard(data);
+    }
+
+    init().catch(err => {
+      console.error(err);
+      document.getElementById('loading').textContent = 'Unable to load dashboard data.';
+    });
+  </script>
+</body>
+</html>

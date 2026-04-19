@@ -8,7 +8,9 @@ packages <- c(
   "stringr",
   "tidyr",
   "tibble",
-  "scales"
+  "scales",
+  "htmltools",
+  "jsonlite"
 )
 
 missing <- packages[!vapply(packages, requireNamespace, logical(1), quietly = TRUE)]

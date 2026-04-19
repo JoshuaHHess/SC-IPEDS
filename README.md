@@ -1,83 +1,49 @@
 # SC IPEDS Dashboard
 
-This repo contains an RStudio-friendly Shiny dashboard for South Carolina IPEDS analysis. It is set up around three views:
+This project is organized around two separate outputs:
 
-- a U.S. heatmap showing where freshmen are coming from
-- STEM degree completions over time
-- average in-state and out-of-state charges over time
+- `shiny/` for the interactive app
+- a static deployable dashboard built from `hosting/static/` into `docs/` for GitHub Pages
 
-## Open In RStudio
+## Structure
 
-Open [SC-IPEDS.Rproj](SC-IPEDS.Rproj), then run:
+- `shiny/` contains the interactive app and its helper files.
+- `hosting/` contains run/install/inspection helpers plus the source files for the static deployment page.
+- `docs/` is the generated GitHub Pages output.
+- `data/` contains the processed IPEDS data used by the app.
+- `data-raw/` contains the raw-data processing script.
 
-```r
-install.packages(c("shiny", "bslib", "dplyr", "ggplot2", "plotly", "readr", "stringr", "tidyr", "tibble", "scales"))
-shiny::runApp()
-```
+## Run The App
 
-If `data/processed/*.rds` files do not exist yet, the app uses demo data so the dashboard still launches.
-
-## Project Layout
-
-```text
-SC-IPEDS/
-├── app.R
-├── R/
-├── data/
-│   ├── raw/
-│   └── processed/
-└── data-raw/
-```
-
-## Use Your IPEDS Files
-
-1. Put your raw IPEDS extracts in `data/raw/`.
-2. Rename or remap them to match the placeholders in `data-raw/process_ipeds.R`.
-3. Run:
+From the project root in R:
 
 ```r
-source("data-raw/process_ipeds.R")
+source("hosting/install_packages.R")
+source("hosting/run_app.R")
 ```
 
-4. Relaunch the app with:
+Or directly:
 
 ```r
-shiny::runApp()
+shiny::runApp("shiny")
 ```
 
-## Expected Columns
+## Build The Static Deployment Page
 
-The first pass assumes these columns are available after any export cleanup:
+From the project root in R:
 
-### Freshman origin
+```r
+source("hosting/install_packages.R")
+source("hosting/build_static_dashboard.R")
+```
 
-- `unitid`
-- `institution_name`
-- `sector`
-- `year`
-- `origin_state`
-- `freshmen`
+That rebuilds:
 
-### Completions
+- `docs/index.html`
+- `docs/data/dashboard-client.json`
 
-- `unitid`
-- `institution_name`
-- `sector`
-- `year`
-- `cip_code`
-- `completions`
+For GitHub Pages, publish the `docs/` folder from your `main` branch.
 
-### Charges
+## RStudio Environment
 
-- `unitid`
-- `institution_name`
-- `sector`
-- `year`
-- `in_state_charge`
-- `out_state_charge`
-
-## Notes
-
-- The STEM trend is currently defined by CIP prefixes in `data-raw/process_ipeds.R`.
-- Once we inspect your exact IPEDS exports, we can tighten the mapping and use official variable names from your files.
-- The current charge chart uses simple averages. If you want enrollment-weighted averages instead, we can switch that in the processing step.
+When you open the project in RStudio, `.Rprofile` sources `shiny/load_rstudio_environment.R` so the key data frames are available in the Environment pane.

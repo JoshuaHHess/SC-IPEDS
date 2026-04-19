@@ -5,5 +5,11 @@
 renv/library/
 renv/staging/
 data/processed/*.rds
+data/processed/*.RData
 !data/processed/.gitkeep
-.Rproj.user
+.Rproj.user/
+.quarto/
+*_cache/
+*_files/
+/.quarto/
+**/*.quarto_ipynb
