@@ -164,7 +164,7 @@ ui <- fluidPage(
     column(4, uiOutput("kpi_gap"))
   ),
   uiOutput("snapshot_title"),
-  p(class = "section-copy", "A quick view of the latest South Carolina institution map, out-of-state origin map, and current-period student composition."),
+  p(class = "section-copy", "A quick view of the latest South Carolina institution map and out-of-state origin map for the freshmen snapshot."),
   fluidRow(
     column(
       width = 6,
@@ -181,7 +181,7 @@ ui <- fluidPage(
       )
     )
   ),
-  div(class = "section-title", "Composition"),
+  div(class = "section-title", "Freshmen Class Composition"),
   fluidRow(
     column(
       width = 6,
@@ -273,7 +273,7 @@ server <- function(input, output, session) {
   })
 
   output$snapshot_title <- renderUI({
-    div(class = "section-title", paste(snapshot_year_label(), "Snapshot"))
+    div(class = "section-title", paste("Freshmen Snapshot:", snapshot_year_label()))
   })
 
   snapshot_origin <- reactive({

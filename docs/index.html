@@ -192,7 +192,7 @@
 
       <section>
         <div id="snapshot-title" class="section-title"></div>
-        <p class="section-copy">A quick view of the latest South Carolina institution map, out-of-state origin map, and current-period student composition.</p>
+        <p class="section-copy">A quick view of the latest South Carolina institution map and out-of-state origin map for the freshmen snapshot.</p>
         <div class="grid-2">
           <div class="card"><div id="schools-plot" class="plot"></div></div>
           <div class="card"><div id="origin-plot" class="plot"></div></div>
@@ -200,7 +200,7 @@
       </section>
 
       <section>
-        <div class="section-title">Composition</div>
+        <div class="section-title">Freshmen Class Composition</div>
         <div class="grid-2">
           <div class="card"><div id="ethnicity-plot" class="plot"></div></div>
           <div class="card"><div id="gender-plot" class="plot"></div></div>
@@ -310,7 +310,7 @@
         latestCommonSpringYear([origin, schools, ethnicity, stem, charges]) ??
         latestSpringYear([origin, schools, ethnicity, stem, charges]);
       const snapshotLabel = academicYear(snapshotSpring);
-      document.getElementById('snapshot-title').textContent = `${snapshotLabel} Snapshot`;
+      document.getElementById('snapshot-title').textContent = `Freshmen Snapshot: ${snapshotLabel}`;
       const workforceSpring = latestSpringYear([workforce]);
       const workforceLabel = academicYear(workforceSpring);
 
