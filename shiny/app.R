@@ -28,14 +28,16 @@ institutions <- sort(unique(c(
   dashboard_data[['stem']][['institution_name']],
   dashboard_data[['charges']][['institution_name']],
   dashboard_data[['schools']][['institution_name']],
-  dashboard_data[['workforce']][['institution_name']]
+  dashboard_data[['workforce']][['institution_name']],
+  dashboard_data[['net_price']][['institution_name']]
 )))
 sectors <- c("All", sort(unique(c(
   dashboard_data[['origin']][['sector']],
   dashboard_data[['stem']][['sector']],
   dashboard_data[['charges']][['sector']],
   dashboard_data[['schools']][['sector']],
-  dashboard_data[['workforce']][['sector']]
+  dashboard_data[['workforce']][['sector']],
+  dashboard_data[['net_price']][['sector']]
 ))))
 
 format_academic_year <- function(spring_year) {
@@ -46,6 +48,36 @@ format_academic_year <- function(spring_year) {
   }
 
   paste0("Academic Year ", spring_year - 1, "-", substr(as.character(spring_year), 3, 4))
+}
+
+income_bands <- c(
+  income_0_30 = "$0–30k",
+  income_30_48 = "$30–48k",
+  income_48_75 = "$48–75k",
+  income_75_110 = "$75–110k",
+  income_110_plus = "$110k+"
+)
+
+net_price_axis_min_2k <- function(values) {
+  values <- values[is.finite(values)]
+
+  if (length(values) == 0) {
+    return(list(autorange = TRUE))
+  }
+
+  axis_min <- min(values, na.rm = TRUE)
+  axis_max <- max(values, na.rm = TRUE)
+  axis_span <- axis_max - axis_min
+
+  if (axis_span < 2000) {
+    axis_midpoint <- mean(c(axis_min, axis_max))
+    axis_min <- axis_midpoint - 1000
+    axis_max <- axis_midpoint + 1000
+  }
+
+  list(
+    range = c(max(0, axis_min), axis_max)
+  )
 }
 
 ui <- fluidPage(
@@ -208,7 +240,11 @@ ui <- fluidPage(
     )
   ),
   div(class = "section-title", "Time Trends"),
-  p(class = "section-copy", "Multi-year trend lines for STEM degrees and average undergraduate charges."),
+  p(class = "section-copy", "Multi-year trend lines for STEM degrees, published tuition and fees, average net price, and net price by income."),
+  p(
+    class = "section-copy",
+    "Net price is IPEDS cost of attendance minus grant and scholarship aid for full-time, first-time degree/certificate-seeking undergraduates. For public institutions, IPEDS limits these net-price measures to students paying in-district or in-state tuition; income-band values are for Title IV aid recipients."
+  ),
   fluidRow(
     column(
       width = 6,
@@ -233,6 +269,22 @@ ui <- fluidPage(
       div(
         class = "chart-card",
         plotlyOutput("charges_plot", height = "360px")
+      )
+    )
+  ),
+  fluidRow(
+    column(
+      width = 6,
+      div(
+        class = "chart-card",
+        plotlyOutput("net_price_plot", height = "360px")
+      )
+    ),
+    column(
+      width = 6,
+      div(
+        class = "chart-card",
+        plotlyOutput("net_price_income_plot", height = "360px")
       )
     )
   )
@@ -330,6 +382,12 @@ server <- function(input, output, session) {
 
   filtered_charges <- reactive({
     dashboard_data$charges |>
+      filter(if (input$sector == "All") TRUE else sector == input$sector) |>
+      filter(if (input$institution == "All Institutions") TRUE else institution_name == input$institution)
+  })
+
+  filtered_net_price <- reactive({
+    dashboard_data$net_price |>
       filter(if (input$sector == "All") TRUE else sector == input$sector) |>
       filter(if (input$institution == "All Institutions") TRUE else institution_name == input$institution)
   })
@@ -510,7 +568,7 @@ server <- function(input, output, session) {
         c(0.7, "#D2552F"),
         c(1, "#6E1F1B")
       ),
-      marker = list(line = list(color = "rgba(255,250,242,0.85)", width = 1)),
+      marker = list(line = list(color = "#000000", width = 1)),
       colorbar = list(title = list(text = "Freshmen"))
     ) |>
       layout(
@@ -690,47 +748,288 @@ server <- function(input, output, session) {
     charges_summary <- filtered_charges() |>
       group_by(year) |>
       summarise(
-        in_state_charge = mean(in_state_charge, na.rm = TRUE),
-        out_state_charge = mean(out_state_charge, na.rm = TRUE),
+        in_state_on_campus = mean(in_state_on_campus, na.rm = TRUE),
+        in_state_off_campus = mean(in_state_off_campus, na.rm = TRUE),
+        out_state_on_campus = mean(out_state_on_campus, na.rm = TRUE),
+        out_state_off_campus = mean(out_state_off_campus, na.rm = TRUE),
         .groups = "drop"
       ) |>
       arrange(year)
 
+    net_price_summary <- filtered_net_price() |>
+      group_by(year) |>
+      summarise(net_price = mean(net_price, na.rm = TRUE), .groups = "drop") |>
+      filter(!is.na(net_price))
+
+    charges_summary <- charges_summary |>
+      full_join(net_price_summary, by = "year") |>
+      arrange(year)
+
+    if (nrow(charges_summary) == 0) {
+      return(plot_ly() |>
+               layout(
+                 title = list(text = "Cost of Attendance and Net Price<br><sup>No cost or net price data available for this selection</sup>", x = 0),
+                 xaxis = list(visible = FALSE),
+                 yaxis = list(visible = FALSE),
+                 paper_bgcolor = "rgba(0,0,0,0)",
+                 plot_bgcolor = "rgba(0,0,0,0)",
+                 margin = list(l = 60, r = 20, t = 70, b = 40)
+               ))
+    }
+
     charge_breaks <- seq(min(charges_summary$year, na.rm = TRUE), max(charges_summary$year, na.rm = TRUE), by = 1)
+    charge_values <- c(
+      charges_summary$in_state_on_campus,
+      charges_summary$in_state_off_campus,
+      charges_summary$out_state_on_campus,
+      charges_summary$out_state_off_campus,
+      charges_summary$net_price
+    )
+    charge_values <- charge_values[is.finite(charge_values)]
+    charge_range <- if (length(charge_values) == 0) {
+      NULL
+    } else {
+      charge_span <- max(charge_values) - min(charge_values)
+      charge_pad <- max(2500, charge_span * 0.25)
+      c(max(0, min(charge_values) - charge_pad), max(charge_values) + charge_pad)
+    }
 
     plot_ly() |>
       add_trace(
         data = charges_summary,
         x = ~year,
-        y = ~in_state_charge,
+        y = ~in_state_on_campus,
         type = "scatter",
         mode = "lines+markers",
-        name = "In-State",
-        line = list(color = "#C79A36", width = 3),
-        marker = list(color = "#C79A36", size = 9),
-        text = ~paste0(year, ": ", dollar(in_state_charge)),
-        hovertemplate = "In-State<br>%{text}<extra></extra>"
+        name = "In-state on campus",
+        line = list(color = "#2F7F79", width = 3),
+        marker = list(color = "#2F7F79", size = 9, symbol = "circle"),
+        text = ~paste0(year, ": ", dollar(in_state_on_campus)),
+        hovertemplate = "In-state on campus<br>%{text}<extra></extra>"
       ) |>
       add_trace(
         data = charges_summary,
         x = ~year,
-        y = ~out_state_charge,
+        y = ~in_state_off_campus,
         type = "scatter",
         mode = "lines+markers",
-        name = "Out-of-State",
+        name = "In-state off campus",
+        line = list(color = "#2F7F79", width = 3, dash = "dot"),
+        marker = list(color = "#2F7F79", size = 10, symbol = "diamond"),
+        text = ~paste0(year, ": ", dollar(in_state_off_campus)),
+        hovertemplate = "In-state off campus<br>%{text}<extra></extra>"
+      ) |>
+      add_trace(
+        data = charges_summary,
+        x = ~year,
+        y = ~out_state_on_campus,
+        type = "scatter",
+        mode = "lines+markers",
+        name = "Out-of-state on campus",
         line = list(color = "#D96C3F", width = 3),
-        marker = list(color = "#D96C3F", size = 9),
-        text = ~paste0(year, ": ", dollar(out_state_charge)),
-        hovertemplate = "Out-of-State<br>%{text}<extra></extra>"
+        marker = list(color = "#D96C3F", size = 9, symbol = "circle"),
+        text = ~paste0(year, ": ", dollar(out_state_on_campus)),
+        hovertemplate = "Out-of-state on campus<br>%{text}<extra></extra>"
+      ) |>
+      add_trace(
+        data = charges_summary,
+        x = ~year,
+        y = ~out_state_off_campus,
+        type = "scatter",
+        mode = "lines+markers",
+        name = "Out-of-state off campus",
+        line = list(color = "#D96C3F", width = 3, dash = "dot"),
+        marker = list(color = "#D96C3F", size = 10, symbol = "diamond"),
+        text = ~paste0(year, ": ", dollar(out_state_off_campus)),
+        hovertemplate = "Out-of-state off campus<br>%{text}<extra></extra>"
+      ) |>
+      add_trace(
+        data = charges_summary,
+        x = ~year,
+        y = ~net_price,
+        type = "scatter",
+        mode = "lines+markers",
+        name = "Average net price",
+        line = list(color = "#343A40", width = 3, dash = "dash"),
+        marker = list(color = "#343A40", size = 9, symbol = "square"),
+        text = ~paste0(year, ": ", dollar(net_price)),
+        hovertemplate = "Average net price<br>%{text}<extra></extra>"
       ) |>
       layout(
-        title = list(text = "Average Charges Over Time<br><sup>Mean charges for the current selection</sup>", x = 0),
+        title = list(text = "Cost of Attendance and Net Price<br><sup>Published total price excludes living with family; net price is after grant and scholarship aid</sup>", x = 0),
         xaxis = list(title = "", tickmode = "array", tickvals = charge_breaks, ticktext = charge_breaks, autorange = TRUE),
-        yaxis = list(title = "Average charge", tickprefix = "$", separatethousands = TRUE, autorange = TRUE),
+        yaxis = list(title = "Dollars", tickprefix = "$", separatethousands = TRUE, range = charge_range),
+        paper_bgcolor = "rgba(0,0,0,0)",
+        plot_bgcolor = "rgba(0,0,0,0)",
+        margin = list(l = 70, r = 35, t = 75, b = 90),
+        legend = list(orientation = "h", x = 0, y = -0.22, xanchor = "left", yanchor = "top")
+      )
+  })
+
+  output$net_price_plot <- renderPlotly({
+    net_price_summary <- filtered_net_price() |>
+      group_by(year) |>
+      summarise(net_price = mean(net_price, na.rm = TRUE), .groups = "drop") |>
+      filter(!is.na(net_price)) |>
+      arrange(year)
+
+    if (nrow(net_price_summary) == 0) {
+      return(plot_ly() |>
+               layout(
+                 title = list(text = "Average Net Price<br><sup>No net price data available for this selection</sup>", x = 0),
+                 xaxis = list(visible = FALSE),
+                 yaxis = list(visible = FALSE),
+                 paper_bgcolor = "rgba(0,0,0,0)",
+                 plot_bgcolor = "rgba(0,0,0,0)",
+                 margin = list(l = 60, r = 20, t = 70, b = 40)
+               ))
+    }
+
+    net_price_breaks <- seq(min(net_price_summary$year, na.rm = TRUE), max(net_price_summary$year, na.rm = TRUE), by = 1)
+
+    plot_ly(
+      data = net_price_summary,
+      x = ~year,
+      y = ~net_price,
+      type = "scatter",
+      mode = "lines+markers",
+      line = list(color = "#2F7F79", width = 3),
+      marker = list(color = "#2F7F79", size = 9),
+      text = ~paste0(year, ": ", dollar(net_price)),
+      hovertemplate = "Net Price<br>%{text}<extra></extra>"
+    ) |>
+      layout(
+        title = list(text = "Average Net Price<br><sup>Students awarded grant or scholarship aid</sup>", x = 0),
+        xaxis = list(title = "", tickmode = "array", tickvals = net_price_breaks, ticktext = net_price_breaks, autorange = TRUE),
+        yaxis = c(list(title = "Average net price", tickprefix = "$", separatethousands = TRUE), net_price_axis_min_2k(net_price_summary$net_price)),
         paper_bgcolor = "rgba(0,0,0,0)",
         plot_bgcolor = "rgba(0,0,0,0)",
         margin = list(l = 60, r = 20, t = 70, b = 40),
-        legend = list(orientation = "h", x = 0.25, y = 1.1)
+        showlegend = FALSE
+      )
+  })
+
+  output$net_price_income_plot <- renderPlotly({
+    net_price_income <- filtered_net_price() |>
+      select(institution_name, year, any_of(names(income_bands))) |>
+      tidyr::pivot_longer(
+        cols = any_of(names(income_bands)),
+        names_to = "income_band",
+        values_to = "net_price"
+      ) |>
+      mutate(income_band = factor(.data[["income_band"]], levels = names(income_bands), labels = unname(income_bands))) |>
+      filter(!is.na(net_price)) |>
+      arrange(income_band, year)
+
+    if (nrow(net_price_income) == 0) {
+      return(plot_ly() |>
+               layout(
+                 title = list(text = "Net Price by Income<br><sup>No income-band net price data available for this selection</sup>", x = 0),
+                 xaxis = list(visible = FALSE),
+                 yaxis = list(visible = FALSE),
+                 paper_bgcolor = "rgba(0,0,0,0)",
+                 plot_bgcolor = "rgba(0,0,0,0)",
+                 margin = list(l = 60, r = 20, t = 70, b = 40)
+               ))
+    }
+
+    if (input$institution != "All Institutions" || dplyr::n_distinct(net_price_income$institution_name) == 1) {
+      single_school <- unique(net_price_income$institution_name)[1]
+      income_year_breaks <- seq(min(net_price_income$year, na.rm = TRUE), max(net_price_income$year, na.rm = TRUE), by = 1)
+
+      return(
+        plot_ly(
+          data = net_price_income |> arrange(income_band, year),
+          x = ~year,
+          y = ~net_price,
+          color = ~income_band,
+          colors = c("#2F7F79", "#C79A36", "#D96C3F", "#6E5AA6", "#5C6F6D"),
+          type = "scatter",
+          mode = "lines+markers",
+          line = list(width = 3),
+          marker = list(size = 8),
+          text = ~paste0(income_band, "<br>", year, ": ", dollar(net_price)),
+          hovertemplate = "%{text}<extra></extra>"
+        ) |>
+          layout(
+            title = list(text = paste0("Net Price by Income Over Time<br><sup>", single_school, "</sup>"), x = 0),
+            xaxis = list(title = "", tickmode = "array", tickvals = income_year_breaks, ticktext = income_year_breaks, autorange = TRUE),
+            yaxis = list(title = "Average net price", tickprefix = "$", separatethousands = TRUE, range = c(0, max(net_price_income$net_price, na.rm = TRUE))),
+            paper_bgcolor = "rgba(0,0,0,0)",
+            plot_bgcolor = "rgba(0,0,0,0)",
+            margin = list(l = 60, r = 20, t = 70, b = 40),
+            legend = list(orientation = "h", x = 0, y = -0.2)
+          )
+      )
+    }
+
+    latest_income_year <- max(net_price_income$year, na.rm = TRUE)
+    net_price_income <- net_price_income |>
+      filter(year == latest_income_year) |>
+      mutate(
+        band_index = as.integer(income_band),
+        point_x = band_index + ((as.integer(factor(institution_name)) %% 9) - 4) * 0.035
+      )
+
+    net_price_income_summary <- net_price_income |>
+      group_by(income_band, band_index) |>
+      summarise(
+        min_price = min(net_price, na.rm = TRUE),
+        median_price = median(net_price, na.rm = TRUE),
+        max_price = max(net_price, na.rm = TRUE),
+        .groups = "drop"
+      ) |>
+      mutate(
+        hover_text = paste0(
+          "Minimum: ", dollar(min_price),
+          "<br>Median: ", dollar(median_price),
+          "<br>Maximum: ", dollar(max_price)
+        )
+      )
+
+    plot_ly() |>
+      add_trace(
+        data = net_price_income,
+        x = ~band_index,
+        y = ~net_price,
+        color = ~income_band,
+        colors = c("#2F7F79", "#C79A36", "#D96C3F", "#6E5AA6", "#5C6F6D"),
+        type = "box",
+        boxpoints = FALSE,
+        hoverinfo = "skip",
+        line = list(width = 2),
+        showlegend = FALSE
+      ) |>
+      add_markers(
+        data = net_price_income,
+        x = ~point_x,
+        y = ~net_price,
+        color = ~income_band,
+        colors = c("#2F7F79", "#C79A36", "#D96C3F", "#6E5AA6", "#5C6F6D"),
+        marker = list(size = 6, opacity = 0.55),
+        text = ~paste0(institution_name, "<br>Net price: ", dollar(net_price)),
+        hovertemplate = "%{text}<extra></extra>",
+        showlegend = FALSE
+      ) |>
+      add_markers(
+        data = net_price_income_summary,
+        x = ~band_index,
+        y = ~median_price,
+        color = ~income_band,
+        colors = c("#2F7F79", "#C79A36", "#D96C3F", "#6E5AA6", "#5C6F6D"),
+        marker = list(size = 24, opacity = 0.01),
+        text = ~hover_text,
+        hovertemplate = "%{text}<extra></extra>",
+        showlegend = FALSE
+      ) |>
+      layout(
+        title = list(text = paste0("Net Price by Income Distribution<br><sup>Most recent year: ", latest_income_year, "</sup>"), x = 0),
+        xaxis = list(title = "", tickmode = "array", tickvals = seq_along(income_bands), ticktext = unname(income_bands)),
+        yaxis = list(title = "Average net price", tickprefix = "$", separatethousands = TRUE, range = c(0, max(net_price_income$net_price, na.rm = TRUE))),
+        paper_bgcolor = "rgba(0,0,0,0)",
+        plot_bgcolor = "rgba(0,0,0,0)",
+        margin = list(l = 60, r = 20, t = 70, b = 40),
+        showlegend = FALSE
       )
   })
 }

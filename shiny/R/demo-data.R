@@ -35,5 +35,13 @@ build_demo_dashboard_data <- function() {
     ) |>
     dplyr::ungroup()
 
-  list(origin = origin, stem = stem, charges = charges)
+  net_price <- tidyr::crossing(institutions, year = years) |>
+    dplyr::group_by(unitid) |>
+    dplyr::mutate(
+      spring_year = year + 1L,
+      net_price = round(seq(8400, 11600, length.out = dplyr::n()) + dplyr::cur_group_id() * 520 + runif(dplyr::n(), -300, 300))
+    ) |>
+    dplyr::ungroup()
+
+  list(origin = origin, stem = stem, charges = charges, net_price = net_price)
 }

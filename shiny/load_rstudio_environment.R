@@ -21,5 +21,6 @@ charges <- dashboard_data[["charges"]]
 schools <- dashboard_data[["schools"]]
 ethnicity <- dashboard_data[["ethnicity"]]
 workforce <- dashboard_data[["workforce"]]
+net_price <- dashboard_data[["net_price"]]
 
 message("Loaded raw IPEDS objects and derived dashboard data into the global environment.")

@@ -18,6 +18,75 @@ recode_sector <- function(x) {
   )
 }
 
+normalize_net_price_data <- function(net_price_source, institution_lookup) {
+  empty_net_price <- tibble::tibble(
+    unitid = integer(),
+    spring_year = integer(),
+    year = integer(),
+    net_price = numeric(),
+    income_0_30 = numeric(),
+    income_30_48 = numeric(),
+    income_48_75 = numeric(),
+    income_75_110 = numeric(),
+    income_110_plus = numeric()
+  ) |>
+    dplyr::left_join(institution_lookup, by = c('unitid' = 'UNITID', 'year' = 'year', 'spring_year' = 'spring_year'))
+
+  if (is.null(net_price_source) || !is.data.frame(net_price_source) || nrow(net_price_source) == 0) {
+    return(empty_net_price)
+  }
+
+  source_names <- names(net_price_source)
+  unitid_col <- dplyr::case_when(
+    'UNITID' %in% source_names ~ 'UNITID',
+    'unitid' %in% source_names ~ 'unitid',
+    'unitId' %in% source_names ~ 'unitId',
+    TRUE ~ NA_character_
+  )
+
+  net_price_col <- dplyr::case_when(
+    'net_price' %in% source_names ~ 'net_price',
+    'NPIST2' %in% source_names ~ 'NPIST2',
+    TRUE ~ NA_character_
+  )
+
+  if (is.na(unitid_col) || is.na(net_price_col)) {
+    return(empty_net_price)
+  }
+
+  spring_year <- if ('spring_year' %in% source_names) {
+    as.integer(net_price_source[['spring_year']])
+  } else if ('ipedsyear' %in% source_names) {
+    as.integer(net_price_source[['ipedsyear']])
+  } else if ('year' %in% source_names) {
+    as.integer(net_price_source[['year']]) + 1L
+  } else {
+    rep(NA_integer_, nrow(net_price_source))
+  }
+
+  year <- if ('year' %in% source_names) {
+    as.integer(net_price_source[['year']])
+  } else {
+    spring_year - 1L
+  }
+
+  net_price_source |>
+    dplyr::transmute(
+      unitid = as.integer(.data[[unitid_col]]),
+      spring_year = spring_year,
+      year = year,
+      net_price = as.numeric(.data[[net_price_col]]),
+      income_0_30 = if ('0-30k' %in% source_names) as.numeric(.data[['0-30k']]) else NA_real_,
+      income_30_48 = if ('30-48k' %in% source_names) as.numeric(.data[['30-48k']]) else NA_real_,
+      income_48_75 = if ('48-75k' %in% source_names) as.numeric(.data[['48-75k']]) else NA_real_,
+      income_75_110 = if ('75-110k' %in% source_names) as.numeric(.data[['75-110k']]) else NA_real_,
+      income_110_plus = if ('110k+' %in% source_names) as.numeric(.data[['110k+']]) else NA_real_
+    ) |>
+    dplyr::filter(!is.na(.data[['unitid']]), !is.na(.data[['year']])) |>
+    dplyr::left_join(institution_lookup, by = c('unitid' = 'UNITID', 'year' = 'year', 'spring_year' = 'spring_year')) |>
+    dplyr::filter(!is.na(.data[['institution_name']]))
+}
+
 load_dashboard_rdata <- function(path) {
   e <- new.env(parent = emptyenv())
   load(path, envir = e)
@@ -27,6 +96,7 @@ load_dashboard_rdata <- function(path) {
   efc <- e[['efc']]
   efa <- e[['efa']]
   efcp <- e[['efcp']]
+  dc <- e[['dc']]
 
   sc_control <- df_control |>
     dplyr::filter(.data[['STABBR']] == 'SC')
@@ -49,6 +119,14 @@ load_dashboard_rdata <- function(path) {
 
   institution_lookup <- sc_control |>
     dplyr::distinct(UNITID, year, spring_year, institution_name, sector)
+
+  net_price_source <- if (exists('net_price', envir = e, inherits = FALSE)) {
+    e[['net_price']]
+  } else if (exists('np', envir = e, inherits = FALSE)) {
+    e[['np']]
+  } else {
+    NULL
+  }
 
   origin <- efc |>
     dplyr::filter(.data[['UNITID']] %in% institution_lookup[['UNITID']]) |>
@@ -84,18 +162,29 @@ load_dashboard_rdata <- function(path) {
     dplyr::left_join(institution_lookup, by = c('unitid' = 'UNITID', 'year' = 'year', 'spring_year' = 'spring_year')) |>
     dplyr::filter(!is.na(.data[['institution_name']]))
 
-  charges <- sc_control |>
+  applications <- sc_control |>
     dplyr::transmute(
       unitid = .data[['UNITID']],
-      institution_name = .data[['institution_name']],
-      sector = .data[['sector']],
       year = .data[['year']],
       spring_year = .data[['spring_year']],
-      applications = as.numeric(.data[['APPLCN']]),
-      in_state_charge = as.numeric(.data[['under.in.charge']]),
-      out_state_charge = as.numeric(.data[['under.out.charge']])
+      applications = as.numeric(.data[['APPLCN']])
+    )
+
+  charges <- dc |>
+    dplyr::filter(.data[['UNITID']] %in% institution_lookup[['UNITID']]) |>
+    dplyr::transmute(
+      unitid = .data[['UNITID']],
+      spring_year = as.integer(.data[['ipedsyear']]),
+      year = as.integer(.data[['ipedsyear']]) - 1L,
+      tuition_fees = as.numeric(.data[['TUFEYR3']]),
+      in_state_on_campus = as.numeric(.data[['CINSON']]),
+      out_state_on_campus = as.numeric(.data[['COTSON']]),
+      in_state_off_campus = as.numeric(.data[['CINSOFF']]),
+      out_state_off_campus = as.numeric(.data[['COTSOFF']])
     ) |>
-    dplyr::filter(!is.na(.data[['in_state_charge']]), !is.na(.data[['out_state_charge']]))
+    dplyr::left_join(institution_lookup, by = c('unitid' = 'UNITID', 'year' = 'year', 'spring_year' = 'spring_year')) |>
+    dplyr::left_join(applications, by = c('unitid', 'year', 'spring_year')) |>
+    dplyr::filter(!is.na(.data[['institution_name']]))
 
   schools <- efa |>
     dplyr::filter(
@@ -169,7 +258,9 @@ load_dashboard_rdata <- function(path) {
     dplyr::left_join(institution_lookup, by = c('unitid' = 'UNITID', 'year' = 'year', 'spring_year' = 'spring_year')) |>
     dplyr::filter(!is.na(.data[['institution_name']]))
 
-  list(origin = origin, stem = stem, charges = charges, schools = schools, ethnicity = ethnicity, workforce = workforce)
+  net_price <- normalize_net_price_data(net_price_source, institution_lookup)
+
+  list(origin = origin, stem = stem, charges = charges, schools = schools, ethnicity = ethnicity, workforce = workforce, net_price = net_price)
 }
 
 load_dashboard_data <- function(data_dir = 'data/processed') {
@@ -187,7 +278,8 @@ load_dashboard_data <- function(data_dir = 'data/processed') {
     return(list(
       origin = readRDS(origin_path),
       stem = readRDS(stem_path),
-      charges = readRDS(charges_path)
+      charges = readRDS(charges_path),
+      net_price = NULL
     ))
   }
 

@@ -126,6 +126,14 @@
       color: var(--muted);
       margin: 0 0 14px;
     }
+    .data-note {
+      color: var(--muted);
+      font-family: system-ui, sans-serif;
+      font-size: 0.92rem;
+      line-height: 1.45;
+      margin: -4px 0 16px;
+      max-width: 78rem;
+    }
     .grid-2, .grid-3 {
       display: grid;
       gap: 16px;
@@ -212,10 +220,15 @@
 
       <section>
         <div class="section-title">Time Trends</div>
-        <p class="section-copy">Multi-year trend lines for STEM degrees and average undergraduate charges.</p>
+        <p class="section-copy">Multi-year trend lines for STEM degrees, published tuition and fees, average net price, and net price by income.</p>
+        <p class="data-note">Net price is IPEDS cost of attendance minus grant and scholarship aid for full-time, first-time degree/certificate-seeking undergraduates. For public institutions, IPEDS limits these net-price measures to students paying in-district or in-state tuition; income-band values are for Title IV aid recipients.</p>
         <div class="grid-2">
           <div class="card"><div id="stem-plot" class="plot short"></div></div>
           <div class="card"><div id="charges-plot" class="plot short"></div></div>
+        </div>
+        <div class="grid-2">
+          <div class="card"><div id="net-price-plot" class="plot short"></div></div>
+          <div class="card"><div id="net-price-income-plot" class="plot short"></div></div>
         </div>
       </section>
     </div>
@@ -305,6 +318,7 @@
       const stem = filterRows(data.stem, institution, sector);
       const charges = filterRows(data.charges, institution, sector);
       const workforce = filterRows(data.workforce, institution, sector);
+      const netPrice = filterRows(data.net_price || [], institution, sector);
 
       const snapshotSpring =
         latestCommonSpringYear([origin, schools, ethnicity, stem, charges]) ??
@@ -331,7 +345,9 @@
       renderGender(snapEthnicity, snapshotLabel);
       renderWorkforce(snapWorkforce, workforceLabel);
       renderStem(stem, stemLevel);
-      renderCharges(charges);
+      renderCharges(charges, netPrice);
+      renderNetPrice(netPrice);
+      renderNetPriceIncome(netPrice);
     }
 
     function renderKpis(origin, stem, charges, applicationsRows, snapshotLabel, applicationsLabel, stemLevel) {
@@ -440,7 +456,7 @@
         text: agg.map(r => `${r.key}: ${fmtNum.format(r.value)} out-of-state freshmen`),
         hovertemplate: '%{text}<extra></extra>',
         colorscale: [[0, '#FFF8EF'], [0.18, '#F6D58A'], [0.42, '#E89A47'], [0.7, '#D2552F'], [1, '#6E1F1B']],
-        marker: { line: { color: 'rgba(255,250,242,0.85)', width: 1 } },
+        marker: { line: { color: '#000000', width: 1 } },
         colorbar: { title: { text: 'Freshmen' } }
       }], {
         title: { text: `Out-of-State Origins<br><sup>${snapshotLabel} excluding South Carolina residents</sup>`, x: 0 },
@@ -624,6 +640,22 @@
       return [lower, upper];
     }
 
+    function netPriceRangeMin2k(values) {
+      const finite = values.filter(v => Number.isFinite(v));
+      if (!finite.length) return undefined;
+
+      let min = Math.min(...finite);
+      let max = Math.max(...finite);
+
+      if ((max - min) < 2000) {
+        const midpoint = (min + max) / 2;
+        min = midpoint - 1000;
+        max = midpoint + 1000;
+      }
+
+      return [Math.max(0, min), max];
+    }
+
     function renderStem(rows, stemLevel) {
       const filtered = stemLevel === 'Total' ? rows : rows.filter(r => r.award_level === stemLevel);
       const yearly = new Map();
@@ -651,57 +683,301 @@
       }, { displayModeBar: false, responsive: true });
     }
 
-    function renderCharges(rows) {
+    function renderCharges(rows, netPriceRows = []) {
       const yearly = new Map();
       rows.forEach(r => {
         const year = Number(r.year);
-        const obj = yearly.get(year) || { inSum: 0, outSum: 0, n: 0 };
-        obj.inSum += Number(r.in_state_charge || 0);
-        obj.outSum += Number(r.out_state_charge || 0);
+        if (!Number.isFinite(year)) return;
+        const obj = yearly.get(year) || {
+          inOnSum: 0,
+          inOnN: 0,
+          inOffSum: 0,
+          inOffN: 0,
+          outOnSum: 0,
+          outOnN: 0,
+          outOffSum: 0,
+          outOffN: 0
+        };
+        const inOn = Number(r.in_state_on_campus);
+        const inOff = Number(r.in_state_off_campus);
+        const outOn = Number(r.out_state_on_campus);
+        const outOff = Number(r.out_state_off_campus);
+        if (Number.isFinite(inOn)) { obj.inOnSum += inOn; obj.inOnN += 1; }
+        if (Number.isFinite(inOff)) { obj.inOffSum += inOff; obj.inOffN += 1; }
+        if (Number.isFinite(outOn)) { obj.outOnSum += outOn; obj.outOnN += 1; }
+        if (Number.isFinite(outOff)) { obj.outOffSum += outOff; obj.outOffN += 1; }
+        yearly.set(year, obj);
+      });
+      netPriceRows.forEach(r => {
+        const year = Number(r.year);
+        const value = Number(r.net_price);
+        if (!Number.isFinite(year) || !Number.isFinite(value)) return;
+        const obj = yearly.get(year) || {
+          inOnSum: 0,
+          inOnN: 0,
+          inOffSum: 0,
+          inOffN: 0,
+          outOnSum: 0,
+          outOnN: 0,
+          outOffSum: 0,
+          outOffN: 0,
+          netPriceSum: 0,
+          netPriceN: 0
+        };
+        obj.netPriceSum = (obj.netPriceSum || 0) + value;
+        obj.netPriceN = (obj.netPriceN || 0) + 1;
+        yearly.set(year, obj);
+      });
+
+      const years = [...yearly.keys()].sort((a, b) => a - b);
+      const buildSeries = (key, label, color, dash, symbol) => {
+        const seriesYears = years.filter(y => yearly.get(y)[`${key}N`]);
+        const values = seriesYears.map(y => yearly.get(y)[`${key}Sum`] / yearly.get(y)[`${key}N`]);
+        if (!seriesYears.length) return null;
+        return {
+          x: seriesYears,
+          y: values,
+          type: 'scatter',
+          mode: 'lines+markers',
+          name: label,
+          line: { color, width: 3, dash },
+          marker: { color, size: symbol === 'diamond' ? 10 : 9, symbol },
+          text: seriesYears.map((y, i) => `${y}: ${fmtMoney0.format(values[i])}`),
+          hovertemplate: `${label}<br>%{text}<extra></extra>`
+        };
+      };
+      const traces = [
+        buildSeries('inOn', 'In-state on campus', COLORS.teal, 'solid', 'circle'),
+        buildSeries('inOff', 'In-state off campus', COLORS.teal, 'dot', 'diamond'),
+        buildSeries('outOn', 'Out-of-state on campus', COLORS.orange, 'solid', 'circle'),
+        buildSeries('outOff', 'Out-of-state off campus', COLORS.orange, 'dot', 'diamond'),
+        buildSeries('netPrice', 'Average net price', '#343A40', 'dash', 'square')
+      ].filter(Boolean);
+
+      if (!traces.length) {
+        Plotly.newPlot('charges-plot', [], {
+          title: { text: 'Cost of Attendance and Net Price<br><sup>No cost or net price data available for this selection</sup>', x: 0 },
+          xaxis: { visible: false },
+          yaxis: { visible: false },
+          paper_bgcolor: 'rgba(0,0,0,0)',
+          plot_bgcolor: 'rgba(0,0,0,0)',
+          margin: { l: 60, r: 20, t: 70, b: 40 },
+          showlegend: false
+        }, { displayModeBar: false, responsive: true });
+        return;
+      }
+
+      const traceValues = traces.flatMap(trace => trace.y).filter(Number.isFinite);
+
+      Plotly.newPlot('charges-plot', traces, {
+        title: { text: 'Cost of Attendance and Net Price<br><sup>Published total price excludes living with family; net price is after grant and scholarship aid</sup>', x: 0 },
+        xaxis: { title: '', tickmode: 'array', tickvals: years, ticktext: years, autorange: true },
+        yaxis: { title: 'Dollars', tickprefix: '$', separatethousands: true, range: trendRange(traceValues, 0.25, 2500) },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { l: 70, r: 35, t: 75, b: 90 },
+        legend: { orientation: 'h', x: 0, y: -0.22, xanchor: 'left', yanchor: 'top' }
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    function renderNetPrice(rows) {
+      const yearly = new Map();
+      rows.forEach(r => {
+        const year = Number(r.year);
+        if (r.net_price === null || r.net_price === undefined || r.net_price === '') return;
+        const value = Number(r.net_price);
+        if (!Number.isFinite(year) || !Number.isFinite(value)) return;
+        const obj = yearly.get(year) || { sum: 0, n: 0 };
+        obj.sum += value;
         obj.n += 1;
         yearly.set(year, obj);
       });
 
       const years = [...yearly.keys()].sort((a, b) => a - b);
-      const inVals = years.map(y => yearly.get(y).n ? yearly.get(y).inSum / yearly.get(y).n : 0);
-      const outVals = years.map(y => yearly.get(y).n ? yearly.get(y).outSum / yearly.get(y).n : 0);
+      const values = years.map(y => yearly.get(y).n ? yearly.get(y).sum / yearly.get(y).n : 0);
+      const title = years.length
+        ? 'Average Net Price<br><sup>Students awarded grant or scholarship aid</sup>'
+        : 'Average Net Price<br><sup>No net price data available for this selection</sup>';
 
-      Plotly.newPlot('charges-plot', [
-        {
-          x: years,
-          y: inVals,
-          type: 'scatter',
-          mode: 'lines+markers',
-          name: 'In-State',
-          line: { color: COLORS.gold, width: 3 },
-          marker: { color: COLORS.gold, size: 9 },
-          text: years.map((y, i) => `${y}: ${fmtMoney0.format(inVals[i])}`),
-          hovertemplate: 'In-State<br>%{text}<extra></extra>'
-        },
-        {
-          x: years,
-          y: outVals,
-          type: 'scatter',
-          mode: 'lines+markers',
-          name: 'Out-of-State',
-          line: { color: COLORS.orange, width: 3 },
-          marker: { color: COLORS.orange, size: 9 },
-          text: years.map((y, i) => `${y}: ${fmtMoney0.format(outVals[i])}`),
-          hovertemplate: 'Out-of-State<br>%{text}<extra></extra>'
-        }
-      ], {
-        title: { text: 'Average Charges', x: 0 },
+      if (!years.length) {
+        Plotly.newPlot('net-price-plot', [], {
+          title: { text: title, x: 0 },
+          xaxis: { visible: false },
+          yaxis: { visible: false },
+          paper_bgcolor: 'rgba(0,0,0,0)',
+          plot_bgcolor: 'rgba(0,0,0,0)',
+          margin: { l: 60, r: 20, t: 70, b: 40 },
+          showlegend: false
+        }, { displayModeBar: false, responsive: true });
+        return;
+      }
+
+      Plotly.newPlot('net-price-plot', [{
+        x: years,
+        y: values,
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: 'Net Price',
+        line: { color: COLORS.teal, width: 3 },
+        marker: { color: COLORS.teal, size: 9 },
+        text: years.map((y, i) => `${y}: ${fmtMoney0.format(values[i])}`),
+        hovertemplate: 'Net Price<br>%{text}<extra></extra>'
+      }], {
+        title: { text: title, x: 0 },
         xaxis: { title: '', tickmode: 'array', tickvals: years, ticktext: years, autorange: true },
-        yaxis: { title: 'Average charge', tickprefix: '$', separatethousands: true, range: trendRange(inVals.concat(outVals)) },
+        yaxis: { title: 'Average net price', tickprefix: '$', separatethousands: true, range: netPriceRangeMin2k(values) },
         paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
         margin: { l: 60, r: 20, t: 70, b: 40 },
-        legend: { orientation: 'h', x: 0.25, y: 1.1 }
+        showlegend: false
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    function renderNetPriceIncome(rows) {
+      const bands = [
+        ['income_0_30', '$0–30k'],
+        ['income_30_48', '$30–48k'],
+        ['income_48_75', '$48–75k'],
+        ['income_75_110', '$75–110k'],
+        ['income_110_plus', '$110k+']
+      ];
+      const colors = [COLORS.teal, COLORS.gold, COLORS.orange, '#6E5AA6', '#5C6F6D'];
+      const candidateYears = rows.flatMap(r => bands.some(([key]) => r[key] !== null && r[key] !== undefined && r[key] !== '') ? [Number(r.year)] : []);
+      const incomeYears = candidateYears.filter(y => Number.isFinite(y));
+      if (!incomeYears.length) {
+        Plotly.newPlot('net-price-income-plot', [], {
+          title: { text: 'Net Price by Income<br><sup>No income-band net price data available for this selection</sup>', x: 0 },
+          xaxis: { visible: false },
+          yaxis: { visible: false },
+          paper_bgcolor: 'rgba(0,0,0,0)',
+          plot_bgcolor: 'rgba(0,0,0,0)',
+          margin: { l: 60, r: 20, t: 70, b: 40 },
+          showlegend: false
+        }, { displayModeBar: false, responsive: true });
+        return;
+      }
+      const latestYear = Math.max(...incomeYears);
+      const latestRows = rows.filter(r => Number(r.year) === latestYear);
+      const institutions = [...new Set(rows.map(r => r.institution_name).filter(Boolean))];
+
+      if (institutions.length === 1) {
+        const traces = bands.map(([key, label], idx) => {
+          const bandRows = rows
+            .map(r => ({ year: Number(r.year), value: Number(r[key]) }))
+            .filter(r => Number.isFinite(r.year) && Number.isFinite(r.value))
+            .sort((a, b) => a.year - b.year);
+          return {
+            x: bandRows.map(r => r.year),
+            y: bandRows.map(r => r.value),
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: label,
+            line: { color: colors[idx], width: 3 },
+            marker: { color: colors[idx], size: 8 },
+            text: bandRows.map(r => `${label}<br>${r.year}: ${fmtMoney0.format(r.value)}`),
+            hovertemplate: '%{text}<extra></extra>'
+          };
+        }).filter(trace => trace.y.length);
+
+        const values = traces.flatMap(trace => trace.y).filter(v => Number.isFinite(v));
+        const years = [...new Set(traces.flatMap(trace => trace.x).filter(y => Number.isFinite(y)))].sort((a, b) => a - b);
+        const title = values.length
+          ? `Net Price by Income Over Time<br><sup>${institutions[0]}</sup>`
+          : 'Net Price by Income<br><sup>No income-band net price data available for this selection</sup>';
+
+        Plotly.newPlot('net-price-income-plot', traces, {
+          title: { text: title, x: 0 },
+          xaxis: { title: '', tickmode: 'array', tickvals: years, ticktext: years, autorange: true },
+          yaxis: { title: 'Average net price', tickprefix: '$', separatethousands: true, range: values.length ? [0, Math.max(...values)] : undefined },
+          paper_bgcolor: 'rgba(0,0,0,0)',
+          plot_bgcolor: 'rgba(0,0,0,0)',
+          margin: { l: 60, r: 20, t: 70, b: 40 },
+          legend: { orientation: 'h', x: 0, y: -0.2 }
+        }, { displayModeBar: false, responsive: true });
+        return;
+      }
+
+      const traces = bands.flatMap(([key, label], idx) => {
+        const values = [];
+        const xValues = [];
+        const pointXValues = [];
+        const pointLabels = [];
+        latestRows.forEach((r, rowIdx) => {
+          if (r[key] === null || r[key] === undefined || r[key] === '') return;
+          const value = Number(r[key]);
+          if (!Number.isFinite(value)) return;
+          values.push(value);
+          xValues.push(idx + 1);
+          pointXValues.push(idx + 1 + ((rowIdx % 9) - 4) * 0.035);
+          pointLabels.push(`${r.institution_name}<br>Net price: ${fmtMoney0.format(value)}`);
+        });
+
+        if (!values.length) return [];
+        const sortedValues = [...values].sort((a, b) => a - b);
+        const medianValue = sortedValues.length % 2
+          ? sortedValues[Math.floor(sortedValues.length / 2)]
+          : (sortedValues[sortedValues.length / 2 - 1] + sortedValues[sortedValues.length / 2]) / 2;
+        const hoverText = `Minimum: ${fmtMoney0.format(Math.min(...values))}<br>Median: ${fmtMoney0.format(medianValue)}<br>Maximum: ${fmtMoney0.format(Math.max(...values))}`;
+
+        return [
+          {
+            x: xValues,
+            y: values,
+            type: 'box',
+            name: label,
+            boxpoints: false,
+            line: { color: colors[idx], width: 3 },
+            marker: { color: colors[idx] },
+            hoverinfo: 'skip',
+            showlegend: false
+          },
+          {
+            x: pointXValues,
+            y: values,
+            type: 'scatter',
+            mode: 'markers',
+            name: label,
+            marker: { color: colors[idx], size: 6, opacity: 0.55 },
+            text: pointLabels,
+            hovertemplate: '%{text}<extra></extra>',
+            showlegend: false
+          },
+          {
+            x: [idx + 1],
+            y: [medianValue],
+            type: 'scatter',
+            mode: 'markers',
+            name: label,
+            marker: { color: colors[idx], size: 24, opacity: 0.01 },
+            text: [hoverText],
+            hovertemplate: '%{text}<extra></extra>',
+            showlegend: false
+          }
+        ];
+      });
+
+      const allValues = traces.flatMap(trace => trace.y).filter(v => Number.isFinite(v));
+      const title = traces.length
+        ? `Net Price by Income Distribution<br><sup>Most recent year: ${latestYear}</sup>`
+        : 'Net Price by Income<br><sup>No income-band net price data available for this selection</sup>';
+
+      Plotly.newPlot('net-price-income-plot', traces, {
+        title: { text: title, x: 0 },
+        xaxis: { title: '', tickmode: 'array', tickvals: [1, 2, 3, 4, 5], ticktext: bands.map(([, label]) => label) },
+        yaxis: { title: 'Average net price', tickprefix: '$', separatethousands: true, range: allValues.length ? [0, Math.max(...allValues)] : undefined },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { l: 60, r: 20, t: 70, b: 40 },
+        showlegend: false
       }, { displayModeBar: false, responsive: true });
     }
 
     async function init() {
-      const response = await fetch('./data/dashboard-client.json');
+      const cacheBust = new URLSearchParams(window.location.search).get('v');
+      const dataUrl = cacheBust
+        ? `./data/dashboard-client.json?v=${encodeURIComponent(cacheBust)}`
+        : './data/dashboard-client.json';
+      const response = await fetch(dataUrl);
       const data = await response.json();
       buildSelectors(data);
       ['institution-select', 'sector-select', 'stem-select'].forEach(id =>
